@@ -1,0 +1,9 @@
+out
+node_modules
+*.vsix
+.npm-cache
+__pycache__
+*.pyc
+*.gds
+*.oas
+.vscode/

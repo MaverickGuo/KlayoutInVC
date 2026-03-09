@@ -1,0 +1,248 @@
+:root {
+  --panel-bg: color-mix(in srgb, var(--vscode-editor-background) 85%, #111 15%);
+  --panel-border: color-mix(in srgb, var(--vscode-editor-foreground) 20%, transparent 80%);
+  --toolbar-bg: color-mix(in srgb, var(--vscode-editor-background) 70%, #202020 30%);
+  --accent: var(--vscode-button-background);
+  --accent-fg: var(--vscode-button-foreground);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-editor-foreground);
+  font-family: var(--vscode-font-family);
+  font-size: 12px;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  width: 100%;
+  height: 100%;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--panel-border);
+  background: var(--toolbar-bg);
+}
+
+.file-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toolbar-actions label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.toolbar-actions .label-size-control input[type="range"] {
+  width: 110px;
+  padding: 0;
+}
+
+.toolbar-actions .label-size-control input[type="number"] {
+  width: 56px;
+  padding: 3px 5px;
+}
+
+.toolbar-actions button.is-active {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+button,
+select {
+  border: 1px solid var(--panel-border);
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  padding: 3px 8px;
+  border-radius: 4px;
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:hover {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+.content-grid {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  min-height: 0;
+}
+
+.side-panel {
+  border-right: 1px solid var(--panel-border);
+  background: var(--panel-bg);
+  padding: 10px;
+  overflow: auto;
+}
+
+.section-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.75;
+  margin-bottom: 8px;
+}
+
+.layer-controls {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.layer-controls input[type="text"] {
+  width: 100%;
+  border: 1px solid var(--panel-border);
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  padding: 5px 7px;
+  border-radius: 4px;
+  font: inherit;
+}
+
+.layer-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.layer-buttons button {
+  padding: 4px 0;
+}
+
+.layer-buttons.layer-buttons-secondary {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.layer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.layer-item {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 5px;
+  border-radius: 4px;
+}
+
+.layer-item:hover {
+  background: color-mix(in srgb, var(--panel-bg) 60%, var(--vscode-editor-foreground) 10%);
+}
+
+.layer-color {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  border: 1px solid #00000066;
+}
+
+.layer-prefix {
+  opacity: 0.8;
+  font-variant-numeric: tabular-nums;
+}
+
+.layer-name-input {
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.layer-name-input:focus {
+  border-color: var(--panel-border);
+  background: var(--vscode-input-background);
+}
+
+.layer-item.is-filtered-out {
+  display: none;
+}
+
+.viewer-wrap {
+  position: relative;
+  min-height: 0;
+  background: radial-gradient(circle at 15% 10%, #263238 0%, #111419 48%, #0b0d11 100%);
+}
+
+#viewerCanvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+}
+
+#viewerCanvas.measure-mode {
+  cursor: crosshair;
+}
+
+#viewerCanvas.dragging {
+  cursor: grabbing;
+}
+
+#viewerCanvas.measure-mode.dragging {
+  cursor: grabbing;
+}
+
+.status-bar {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  border: 1px solid #ffffff2e;
+  background: #111111cc;
+  color: #f2f5f7;
+  font-size: 11px;
+  pointer-events: none;
+  max-width: calc(100% - 20px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .content-grid {
+    grid-template-columns: 190px 1fr;
+  }
+
+  .toolbar {
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+}

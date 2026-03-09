@@ -1,0 +1,90 @@
+{
+  "name": "vscode-klayout-gds-viewer",
+  "displayName": "KLayout GDS Viewer",
+  "description": "在 VS Code 中直接查看 GDS/OAS 版图，基于 KLayout Python 后端渲染",
+  "version": "0.1.0",
+  "publisher": "local",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/maverick/KlayoutInVC.git"
+  },
+  "homepage": "https://github.com/maverick/KlayoutInVC#readme",
+  "bugs": {
+    "url": "https://github.com/maverick/KlayoutInVC/issues"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "gds",
+    "oas",
+    "klayout",
+    "ic",
+    "layout",
+    "vscode"
+  ],
+  "activationEvents": [
+    "onCustomEditor:gdsViewer.editor"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "gdsViewer.editor",
+        "displayName": "GDS Viewer",
+        "selector": [
+          {
+            "filenamePattern": "*.gds"
+          },
+          {
+            "filenamePattern": "*.oas"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "configuration": {
+      "title": "KLayout GDS Viewer",
+      "properties": {
+        "gdsViewer.pythonPath": {
+          "type": "string",
+          "default": "python3",
+          "description": "用于启动后端服务的 Python 可执行文件路径"
+        },
+        "gdsViewer.backendTimeoutMs": {
+          "type": "number",
+          "default": 20000,
+          "minimum": 3000,
+          "description": "等待 Python 后端就绪的超时时间（毫秒）"
+        },
+        "gdsViewer.backendIdleTimeoutSec": {
+          "type": "number",
+          "default": 900,
+          "minimum": 60,
+          "description": "后端空闲自动退出时间（秒）"
+        },
+        "gdsViewer.defaultLabelFontSize": {
+          "type": "number",
+          "default": 13,
+          "minimum": 6,
+          "maximum": 48,
+          "description": "Label 文本默认字号（px）"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.12",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.4.5"
+  }
+}

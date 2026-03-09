@@ -1,0 +1,8 @@
+.gitignore
+.npm-cache/**
+node_modules/**
+src/**
+python/__pycache__/**
+*.gds
+*.oas
+vscode-Klayout.md
