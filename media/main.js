@@ -11,12 +11,14 @@
   const token = bootstrap.token;
 
   const canvas = document.getElementById("viewerCanvas");
+  const viewerWrap = document.querySelector(".viewer-wrap");
   const statusBar = document.getElementById("statusBar");
   const layerList = document.getElementById("layerList");
   const cellSelect = document.getElementById("cellSelect");
   const fitBtn = document.getElementById("fitBtn");
   const zoomInBtn = document.getElementById("zoomInBtn");
   const zoomOutBtn = document.getElementById("zoomOutBtn");
+  const backgroundModeSelect = document.getElementById("backgroundModeSelect");
   const labelBtn = document.getElementById("labelBtn");
   const measureBtn = document.getElementById("measureBtn");
   const clearMeasureBtn = document.getElementById("clearMeasureBtn");
@@ -39,11 +41,16 @@
     return;
   }
 
+  const restoredState = sanitizePersistedState(vscode?.getState?.() || null);
+
   const state = {
     meta: null,
-    cell: "",
-    hiddenLayers: new Set(),
-    view: null,
+    cell: restoredState.cell || "",
+    hiddenLayers: new Set(restoredState.hiddenLayerIds || []),
+    restoredHiddenLayerIds: Array.isArray(restoredState.hiddenLayerIds)
+      ? [...restoredState.hiddenLayerIds]
+      : null,
+    view: cloneView(restoredState.view),
     renderSeq: 0,
     renderTimer: null,
     renderInFlight: false,
@@ -56,14 +63,19 @@
     lastImage: null,
     lastImageView: null,
     layerRows: [],
-    layerFilterText: "",
+    layerFilterText: restoredState.layerFilterText || "",
     layerOverrides: {},
     layerBaseNameByKey: {},
     saveOverridesTimer: null,
-    showLabels: true,
-    labelFontSize: clampLabelFontSize(bootstrap.labelFontSize),
+    showLabels: restoredState.showLabels ?? true,
+    labelFontSize: clampLabelFontSize(restoredState.labelFontSize ?? bootstrap.labelFontSize),
+    backgroundMode: normalizeBackgroundMode(restoredState.backgroundMode),
+    restoredCanvasCssSize: restoredState.canvasCssSize,
+    canvasCssSize: null,
+    persistTimer: null,
+    viewerTheme: null,
     measure: {
-      enabled: false,
+      enabled: restoredState.measureEnabled ?? false,
       start: null,
       end: null,
       hover: null,
@@ -77,9 +89,22 @@
   };
 
   const resizeObserver = new ResizeObserver(() => {
-    const resized = resizeCanvas();
-    if (resized) {
+    const resizeResult = resizeCanvas();
+    if (resizeResult) {
+      if (state.view) {
+        const nextView = scaleViewForCanvasResize(
+          state.view,
+          resizeResult.previousCssSize,
+          resizeResult.cssSize,
+        );
+        if (nextView) {
+          state.view = nextView;
+          refreshStatus();
+        }
+        schedulePersistState(120);
+      }
       if (state.meta) {
+        repaint();
         scheduleRender(20, "final");
       } else {
         repaint();
@@ -92,26 +117,41 @@
     resizeObserver.observe(canvas.parentElement);
   }
   resizeCanvas();
+  applyBackgroundMode(state.backgroundMode, { persist: false, repaintNow: false });
+
+  if (layerFilterInput instanceof HTMLInputElement && state.layerFilterText) {
+    layerFilterInput.value = state.layerFilterText;
+  }
 
   fitBtn?.addEventListener("click", () => {
     fitToCurrentCell();
     scheduleRender(0, "final");
+    schedulePersistState(0);
   });
 
   zoomInBtn?.addEventListener("click", () => {
     zoomAt(0.8, 0.5, 0.5);
     scheduleRender(0, state.wheelActive ? "interactive" : "final");
+    schedulePersistState(0);
   });
 
   zoomOutBtn?.addEventListener("click", () => {
     zoomAt(1.25, 0.5, 0.5);
     scheduleRender(0, state.wheelActive ? "interactive" : "final");
+    schedulePersistState(0);
   });
+
+  if (backgroundModeSelect instanceof HTMLSelectElement) {
+    backgroundModeSelect.addEventListener("change", () => {
+      applyBackgroundMode(backgroundModeSelect.value, { persist: true, repaintNow: true });
+    });
+  }
 
   labelBtn?.addEventListener("click", () => {
     state.showLabels = !state.showLabels;
     updateToggleButtons();
     scheduleRender(0, "final");
+    schedulePersistState(0);
   });
 
   if (labelFontRange instanceof HTMLInputElement) {
@@ -141,6 +181,7 @@
     updateToggleButtons();
     repaint();
     refreshStatus();
+    schedulePersistState(0);
   });
 
   clearMeasureBtn?.addEventListener("click", () => {
@@ -158,17 +199,20 @@
     state.measure.hoverSnapReqSeq += 1;
     repaint();
     refreshStatus();
+    schedulePersistState(0);
   });
 
   cellSelect.addEventListener("change", () => {
     state.cell = cellSelect.value;
     fitToCurrentCell();
     scheduleRender(0, "final");
+    schedulePersistState(0);
   });
 
   layerFilterInput?.addEventListener("input", () => {
     state.layerFilterText = layerFilterInput.value.trim().toLowerCase();
     applyLayerFilter();
+    schedulePersistState(120);
   });
 
   layersAllOnBtn?.addEventListener("click", () => {
@@ -197,6 +241,11 @@
     applyOverridesToAllRows();
     scheduleSaveLayerOverrides();
     scheduleRender(0, "final");
+    schedulePersistState(0);
+  });
+
+  window.addEventListener("pagehide", () => {
+    persistStateNow();
   });
 
   canvas.addEventListener("mousedown", (event) => {
@@ -228,6 +277,7 @@
     canvas.classList.remove("dragging");
     state.drag = null;
     scheduleRender(0, "final");
+    schedulePersistState(0);
   });
 
   canvas.addEventListener("click", async (event) => {
@@ -261,6 +311,7 @@
     state.measure.hoverSnapReqSeq += 1;
     repaint();
     refreshStatus();
+    schedulePersistState(0);
   });
 
   canvas.addEventListener("mousemove", (event) => {
@@ -290,6 +341,7 @@
 
       repaint();
       scheduleRender(48, "interactive");
+      schedulePersistState(140);
     }
 
     if (state.measure.enabled && !state.measure.end) {
@@ -339,6 +391,7 @@
         state.wheelActive = false;
         state.wheelStopTimer = null;
         scheduleRender(0, "final");
+        schedulePersistState(0);
       }, 120);
       const rect = canvas.getBoundingClientRect();
       const nx = clamp((event.clientX - rect.left) / Math.max(rect.width, 1), 0, 1);
@@ -347,6 +400,7 @@
       const factor = Math.exp(event.deltaY * 0.0011);
       zoomAt(factor, nx, ny);
       scheduleRender(20, "interactive");
+      schedulePersistState(140);
     },
     { passive: false },
   );
@@ -364,6 +418,9 @@
     if (message.type === "layerOverrides") {
       state.layerOverrides = sanitizeLayerOverrides(message.overrides);
       applyOverridesToAllRows();
+      if (state.layerRows.length > 0) {
+        applyRestoredHiddenLayers(true);
+      }
       return;
     }
 
@@ -382,6 +439,7 @@
         applyOverridesToAllRows();
         scheduleSaveLayerOverrides();
         scheduleRender(0, "final");
+        schedulePersistState(0);
         setStatus(`LYP导入完成: ${parsed.matched} 层匹配 (${message.filePath || ""})`);
       } catch (error) {
         setStatus(`LYP导入失败: ${error instanceof Error ? error.message : String(error)}`);
@@ -413,8 +471,20 @@
     populateCellList(meta);
     populateLayerList(meta);
 
-    state.cell = cellSelect.value || meta.default_cell || "";
-    fitToCurrentCell();
+    const initialCell = resolveInitialCell(meta, restoredState.cell);
+    state.cell = initialCell;
+    cellSelect.value = initialCell;
+
+    const restoredView = restorePersistedView();
+    if (restoredView) {
+      state.view = restoredView;
+      refreshStatus();
+      repaint();
+    } else {
+      fitToCurrentCell();
+    }
+
+    schedulePersistState(0);
     scheduleRender(0, "final");
   }
 
@@ -488,6 +558,8 @@
   function repaint() {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = getViewerTheme().canvasBg;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     if (state.lastImage) {
       const sourceView = state.lastImageView;
@@ -517,9 +589,6 @@
       } else {
         ctx.drawImage(state.lastImage, 0, 0, canvas.width, canvas.height);
       }
-    } else {
-      ctx.fillStyle = "#0c1017";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
 
     if (!state.view || !state.meta) {
@@ -738,6 +807,7 @@
       checkbox.checked = true;
 
       checkbox.addEventListener("change", () => {
+        state.restoredHiddenLayerIds = null;
         if (checkbox.checked) {
           state.hiddenLayers.delete(layerId);
         } else {
@@ -756,6 +826,7 @@
           scheduleSaveLayerOverrides();
         }
         scheduleRender(0, "final");
+        schedulePersistState(80);
       });
 
       const layerPrefix = document.createElement("span");
@@ -801,6 +872,7 @@
       applyOverrideToLayerRow(state.layerRows[state.layerRows.length - 1], true);
     }
 
+    applyRestoredHiddenLayers(Object.keys(state.layerOverrides).length > 0);
     applyLayerFilter();
   }
 
@@ -814,12 +886,34 @@
     }
   }
 
+  function applyRestoredHiddenLayers(consume = false) {
+    if (!Array.isArray(state.restoredHiddenLayerIds)) {
+      return;
+    }
+
+    const restoredHidden = new Set(state.restoredHiddenLayerIds.map((value) => String(value)));
+    state.hiddenLayers.clear();
+
+    for (const entry of state.layerRows) {
+      const visible = !restoredHidden.has(entry.layerId);
+      entry.checkbox.checked = visible;
+      if (!visible) {
+        state.hiddenLayers.add(entry.layerId);
+      }
+    }
+
+    if (consume) {
+      state.restoredHiddenLayerIds = null;
+    }
+  }
+
   function batchSetLayers(visible) {
     const targets = getBatchTargetLayers();
     if (targets.length === 0) {
       return;
     }
 
+    state.restoredHiddenLayerIds = null;
     for (const entry of targets) {
       entry.checkbox.checked = visible;
       if (visible) {
@@ -830,6 +924,7 @@
     }
 
     scheduleRender(0, "final");
+    schedulePersistState(0);
   }
 
   function batchInvertLayers() {
@@ -838,6 +933,7 @@
       return;
     }
 
+    state.restoredHiddenLayerIds = null;
     for (const entry of targets) {
       entry.checkbox.checked = !entry.checkbox.checked;
       if (entry.checkbox.checked) {
@@ -848,6 +944,7 @@
     }
 
     scheduleRender(0, "final");
+    schedulePersistState(0);
   }
 
   function getBatchTargetLayers() {
@@ -1086,6 +1183,7 @@
 
     ctx.save();
     ctx.lineWidth = 1;
+    const theme = getViewerTheme();
 
     const sxScale = canvas.width / viewW;
     const syScale = canvas.height / viewH;
@@ -1103,7 +1201,7 @@
       const sx = (x - state.view.x0) * sxScale;
 
       const major = i % 5 === 0;
-      ctx.strokeStyle = major ? "#ffffff20" : "#ffffff12";
+      ctx.strokeStyle = major ? theme.gridMajor : theme.gridMinor;
       ctx.beginPath();
       ctx.moveTo(sx + 0.5, 0);
       ctx.lineTo(sx + 0.5, canvas.height);
@@ -1123,7 +1221,7 @@
       const sy = (state.view.y1 - y) * syScale;
 
       const major = i % 5 === 0;
-      ctx.strokeStyle = major ? "#ffffff20" : "#ffffff12";
+      ctx.strokeStyle = major ? theme.gridMajor : theme.gridMinor;
       ctx.beginPath();
       ctx.moveTo(0, sy + 0.5);
       ctx.lineTo(canvas.width, sy + 0.5);
@@ -1156,8 +1254,9 @@
     const y = canvas.height - margin;
 
     ctx.save();
-    ctx.strokeStyle = "#f5f7ff";
-    ctx.fillStyle = "#f5f7ff";
+    const theme = getViewerTheme();
+    ctx.strokeStyle = theme.scaleFg;
+    ctx.fillStyle = theme.scaleFg;
     ctx.lineWidth = 2;
 
     ctx.beginPath();
@@ -1259,7 +1358,7 @@
     const mx = (p0.x + p1.x) / 2;
     const my = (p0.y + p1.y) / 2;
 
-    ctx.fillStyle = "#101215d8";
+    ctx.fillStyle = getViewerTheme().measureLabelBg;
     ctx.strokeStyle = `${endColor}88`;
     ctx.lineWidth = 1;
     const text = formatDistanceUm(distUm);
@@ -1473,21 +1572,234 @@
     if (changed && triggerRender && state.meta) {
       scheduleRender(0, "final");
     }
+    if (changed) {
+      schedulePersistState(0);
+    }
   }
 
   function resizeCanvas() {
     const rect = canvas.getBoundingClientRect();
+    const cssSize = {
+      width: Math.max(1, Math.round(rect.width)),
+      height: Math.max(1, Math.round(rect.height)),
+    };
+    const previousCssSize = state.canvasCssSize ? { ...state.canvasCssSize } : null;
     const dpr = window.devicePixelRatio || 1;
     const width = Math.max(1, Math.round(rect.width * dpr));
     const height = Math.max(1, Math.round(rect.height * dpr));
 
-    if (canvas.width === width && canvas.height === height) {
-      return false;
+    if (
+      canvas.width === width &&
+      canvas.height === height &&
+      previousCssSize &&
+      previousCssSize.width === cssSize.width &&
+      previousCssSize.height === cssSize.height
+    ) {
+      return null;
     }
 
     canvas.width = width;
     canvas.height = height;
-    return true;
+    state.canvasCssSize = cssSize;
+    return {
+      previousCssSize,
+      cssSize,
+    };
+  }
+
+  function applyBackgroundMode(rawMode, options = {}) {
+    const nextMode = normalizeBackgroundMode(rawMode);
+    const persist = options.persist !== false;
+    const repaintNow = options.repaintNow !== false;
+
+    state.backgroundMode = nextMode;
+    document.documentElement.dataset.viewerBgMode = nextMode;
+
+    if (
+      backgroundModeSelect instanceof HTMLSelectElement &&
+      backgroundModeSelect.value !== nextMode
+    ) {
+      backgroundModeSelect.value = nextMode;
+    }
+
+    state.viewerTheme = readViewerTheme();
+
+    if (repaintNow) {
+      repaint();
+      refreshStatus();
+    }
+    if (persist) {
+      schedulePersistState(0);
+    }
+  }
+
+  function getViewerTheme() {
+    if (!state.viewerTheme) {
+      state.viewerTheme = readViewerTheme();
+    }
+    return state.viewerTheme;
+  }
+
+  function readViewerTheme() {
+    const styleSource = viewerWrap instanceof Element
+      ? getComputedStyle(viewerWrap)
+      : getComputedStyle(document.documentElement);
+    return {
+      canvasBg: readCssVar(styleSource, "--viewer-canvas-bg", "#0f141a"),
+      gridMajor: readCssVar(styleSource, "--viewer-grid-major", "#ffffff20"),
+      gridMinor: readCssVar(styleSource, "--viewer-grid-minor", "#ffffff12"),
+      scaleFg: readCssVar(styleSource, "--viewer-scale-fg", "#f5f7ff"),
+      measureLabelBg: readCssVar(styleSource, "--viewer-measure-label-bg", "#101215d8"),
+    };
+  }
+
+  function readCssVar(styleSource, name, fallback) {
+    const value = styleSource.getPropertyValue(name).trim();
+    return value || fallback;
+  }
+
+  function resolveInitialCell(meta, preferredCell) {
+    const cells = Array.isArray(meta.top_cells)
+      ? meta.top_cells.map((value) => String(value))
+      : [];
+    if (preferredCell && cells.includes(preferredCell)) {
+      return preferredCell;
+    }
+    return cellSelect.value || meta.default_cell || cells[0] || "";
+  }
+
+  function restorePersistedView() {
+    if (!restoredState.view || restoredState.cell !== state.cell) {
+      return null;
+    }
+
+    const restoredView = cloneView(restoredState.view);
+    if (!restoredView) {
+      return null;
+    }
+
+    const scaledView = scaleViewForCanvasResize(
+      restoredView,
+      state.restoredCanvasCssSize,
+      state.canvasCssSize,
+    );
+    if (scaledView) {
+      return scaledView;
+    }
+
+    return fitViewToCanvas(restoredView);
+  }
+
+  function fitViewToCanvas(view) {
+    const targetAspect = getCanvasAspect();
+    if (!view || !Number.isFinite(targetAspect) || targetAspect <= 0) {
+      return cloneView(view);
+    }
+
+    const viewW = view.x1 - view.x0;
+    const viewH = view.y1 - view.y0;
+    if (viewW <= 0 || viewH <= 0) {
+      return cloneView(view);
+    }
+
+    const viewAspect = viewW / viewH;
+    let nextW = viewW;
+    let nextH = viewH;
+    if (viewAspect > targetAspect) {
+      nextH = viewW / targetAspect;
+    } else {
+      nextW = viewH * targetAspect;
+    }
+
+    return createCenteredView((view.x0 + view.x1) / 2, (view.y0 + view.y1) / 2, nextW, nextH);
+  }
+
+  function getCanvasAspect() {
+    const rect = canvas.getBoundingClientRect();
+    return Math.max(rect.width, 1) / Math.max(rect.height, 1);
+  }
+
+  function scaleViewForCanvasResize(view, previousCssSize, nextCssSize) {
+    const sourceView = cloneView(view);
+    const prev = normalizeCssSize(previousCssSize);
+    const next = normalizeCssSize(nextCssSize);
+    if (!sourceView || !prev || !next) {
+      return null;
+    }
+
+    const viewW = sourceView.x1 - sourceView.x0;
+    const viewH = sourceView.y1 - sourceView.y0;
+    if (viewW <= 0 || viewH <= 0) {
+      return null;
+    }
+
+    const scaledW = viewW * (next.width / prev.width);
+    const scaledH = viewH * (next.height / prev.height);
+    return createCenteredView(
+      (sourceView.x0 + sourceView.x1) / 2,
+      (sourceView.y0 + sourceView.y1) / 2,
+      scaledW,
+      scaledH,
+    );
+  }
+
+  function createCenteredView(cx, cy, width, height) {
+    if (
+      !Number.isFinite(cx) ||
+      !Number.isFinite(cy) ||
+      !Number.isFinite(width) ||
+      !Number.isFinite(height) ||
+      width <= 0 ||
+      height <= 0
+    ) {
+      return null;
+    }
+
+    return {
+      x0: cx - width / 2,
+      x1: cx + width / 2,
+      y0: cy - height / 2,
+      y1: cy + height / 2,
+    };
+  }
+
+  function schedulePersistState(delayMs) {
+    if (!vscode?.setState) {
+      return;
+    }
+
+    if (state.persistTimer !== null) {
+      clearTimeout(state.persistTimer);
+      state.persistTimer = null;
+    }
+
+    state.persistTimer = setTimeout(() => {
+      state.persistTimer = null;
+      persistStateNow();
+    }, Math.max(0, Number(delayMs) || 0));
+  }
+
+  function persistStateNow() {
+    if (!vscode?.setState) {
+      return;
+    }
+
+    if (state.persistTimer !== null) {
+      clearTimeout(state.persistTimer);
+      state.persistTimer = null;
+    }
+
+    vscode.setState({
+      cell: state.cell,
+      view: cloneView(state.view),
+      hiddenLayerIds: Array.from(state.hiddenLayers),
+      showLabels: state.showLabels,
+      labelFontSize: state.labelFontSize,
+      backgroundMode: state.backgroundMode,
+      canvasCssSize: state.canvasCssSize ? { ...state.canvasCssSize } : null,
+      measureEnabled: state.measure.enabled,
+      layerFilterText: state.layerFilterText,
+    });
   }
 
   function setStatus(text) {
@@ -1531,6 +1843,71 @@
       return 13;
     }
     return clamp(Math.round(num), 6, 48);
+  }
+
+  function normalizeBackgroundMode(value) {
+    return value === "pure-black" || value === "pure-white" ? value : "soft-dark";
+  }
+
+  function sanitizePersistedState(raw) {
+    const data = raw && typeof raw === "object" ? raw : {};
+    return {
+      cell: typeof data.cell === "string" ? data.cell : "",
+      view: normalizeView(data.view),
+      hiddenLayerIds: Array.isArray(data.hiddenLayerIds)
+        ? data.hiddenLayerIds.map((value) => String(value))
+        : null,
+      showLabels: typeof data.showLabels === "boolean" ? data.showLabels : undefined,
+      labelFontSize: Number.isFinite(Number(data.labelFontSize))
+        ? Number(data.labelFontSize)
+        : undefined,
+      backgroundMode: normalizeBackgroundMode(data.backgroundMode),
+      canvasCssSize: normalizeCssSize(data.canvasCssSize),
+      measureEnabled: typeof data.measureEnabled === "boolean" ? data.measureEnabled : undefined,
+      layerFilterText: typeof data.layerFilterText === "string"
+        ? data.layerFilterText.trim().toLowerCase()
+        : "",
+    };
+  }
+
+  function normalizeView(raw) {
+    if (!raw || typeof raw !== "object") {
+      return null;
+    }
+
+    const x0 = Number(raw.x0);
+    const x1 = Number(raw.x1);
+    const y0 = Number(raw.y0);
+    const y1 = Number(raw.y1);
+    if (
+      !Number.isFinite(x0) ||
+      !Number.isFinite(x1) ||
+      !Number.isFinite(y0) ||
+      !Number.isFinite(y1) ||
+      x1 <= x0 ||
+      y1 <= y0
+    ) {
+      return null;
+    }
+
+    return { x0, x1, y0, y1 };
+  }
+
+  function normalizeCssSize(raw) {
+    if (!raw || typeof raw !== "object") {
+      return null;
+    }
+
+    const width = Math.round(Number(raw.width));
+    const height = Math.round(Number(raw.height));
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+      return null;
+    }
+    return { width, height };
+  }
+
+  function cloneView(view) {
+    return view ? { ...view } : null;
   }
 
   function niceStep(value) {

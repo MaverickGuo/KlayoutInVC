@@ -51,6 +51,9 @@ class GdsReadonlyEditorProvider
       provider,
       {
         supportsMultipleEditorsPerDocument: true,
+        webviewOptions: {
+          retainContextWhenHidden: true,
+        },
       },
     );
 
@@ -377,6 +380,14 @@ class GdsReadonlyEditorProvider
             Label字号
             <input id="labelFontRange" type="range" min="6" max="48" step="1" value="${initialData.labelFontSize}" />
             <input id="labelFontInput" type="number" min="6" max="48" step="1" value="${initialData.labelFontSize}" />
+          </label>
+          <label>
+            背景
+            <select id="backgroundModeSelect">
+              <option value="soft-dark">柔黑</option>
+              <option value="pure-black">纯黑</option>
+              <option value="pure-white">纯白</option>
+            </select>
           </label>
           <button id="labelBtn" type="button">标签: 开</button>
           <button id="measureBtn" type="button">测距: 关</button>

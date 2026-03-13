@@ -235,12 +235,6 @@ class LayoutModel:
             parts.append("<defs>")
             parts.extend(pattern_defs)
             parts.append("</defs>")
-        parts.extend(
-            [
-            f'<rect x="0" y="0" width="{width}" height="{height}" fill="#0a0d12"/>',
-            ]
-        )
-
         polygon_count = 0
         label_count = 0
 

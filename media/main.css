@@ -4,6 +4,39 @@
   --toolbar-bg: color-mix(in srgb, var(--vscode-editor-background) 70%, #202020 30%);
   --accent: var(--vscode-button-background);
   --accent-fg: var(--vscode-button-foreground);
+  --viewer-bg: radial-gradient(circle at 15% 10%, #263238 0%, #111419 48%, #0b0d11 100%);
+  --viewer-canvas-bg: #0f141a;
+  --viewer-grid-major: #ffffff20;
+  --viewer-grid-minor: #ffffff12;
+  --viewer-scale-fg: #f5f7ff;
+  --viewer-status-border: #ffffff2e;
+  --viewer-status-bg: #111111cc;
+  --viewer-status-fg: #f2f5f7;
+  --viewer-measure-label-bg: #101215d8;
+}
+
+:root[data-viewer-bg-mode="pure-black"] {
+  --viewer-bg: radial-gradient(circle at 18% 12%, #1e1e1e 0%, #050505 58%, #000000 100%);
+  --viewer-canvas-bg: #030303;
+  --viewer-grid-major: #ffffff24;
+  --viewer-grid-minor: #ffffff14;
+  --viewer-scale-fg: #f5f5f5;
+  --viewer-status-border: #ffffff33;
+  --viewer-status-bg: #050505d4;
+  --viewer-status-fg: #f4f4f4;
+  --viewer-measure-label-bg: #060606de;
+}
+
+:root[data-viewer-bg-mode="pure-white"] {
+  --viewer-bg: radial-gradient(circle at 18% 10%, #ffffff 0%, #f5f5f5 55%, #ececec 100%);
+  --viewer-canvas-bg: #fbfbfb;
+  --viewer-grid-major: #0000001f;
+  --viewer-grid-minor: #00000012;
+  --viewer-scale-fg: #1c2026;
+  --viewer-status-border: #00000024;
+  --viewer-status-bg: #ffffffe6;
+  --viewer-status-fg: #1c2026;
+  --viewer-measure-label-bg: #ffffffe0;
 }
 
 * {
@@ -197,7 +230,7 @@ button:hover {
 .viewer-wrap {
   position: relative;
   min-height: 0;
-  background: radial-gradient(circle at 15% 10%, #263238 0%, #111419 48%, #0b0d11 100%);
+  background: var(--viewer-bg);
 }
 
 #viewerCanvas {
@@ -205,6 +238,7 @@ button:hover {
   width: 100%;
   height: 100%;
   cursor: grab;
+  background: var(--viewer-canvas-bg);
 }
 
 #viewerCanvas.measure-mode {
@@ -225,9 +259,9 @@ button:hover {
   bottom: 10px;
   padding: 5px 8px;
   border-radius: 4px;
-  border: 1px solid #ffffff2e;
-  background: #111111cc;
-  color: #f2f5f7;
+  border: 1px solid var(--viewer-status-border);
+  background: var(--viewer-status-bg);
+  color: var(--viewer-status-fg);
   font-size: 11px;
   pointer-events: none;
   max-width: calc(100% - 20px);
